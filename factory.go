@@ -1,28 +1,30 @@
 package pool
 
 import (
-	"fmt"
 	"net"
+	"time"
 )
 
-type ObjectFactory interface {
-	CreateObject() (interface{}, error)
+type objectFactory interface {
+	createObject() (abstractObjectInterface, error)
 }
 
 type connectionFactory struct{}
 
-func (c *connectionFactory) CreateObject() (interface{}, error) {
+func (c *connectionFactory) createObject() (abstractObjectInterface, error) {
+	var connection connection
 	con, err := net.Dial("tcp", "localhost:1433")
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Println("Create a new connection")
-	return Connection{Connector: con}, nil
+	connection.connector = con
+	connection.createAt = time.Now()
+	return connection, nil
 }
 
 type pencilFactory struct{}
 
-func (p *pencilFactory) CreateObject() (interface{}, error) {
-	return Pencil{}, nil
+func (p *pencilFactory) createObject() (abstractObjectInterface, error) {
+	return pencil{}, nil
 }

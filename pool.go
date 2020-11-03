@@ -4,19 +4,24 @@ import (
 	"errors"
 	"reflect"
 	"strings"
+	"time"
 )
 
 type pool struct {
 	objectType    string
-	idleObject    chan interface{}
-	runningObject int
 	capacity      int
-	objectCreator ObjectFactory
+	minimumObject int
+	idleObject    chan abstractObjectInterface
+	runningObject int
+	objectCreator objectFactory
+	timeOut       time.Duration
 }
 
+//NewEmptyPool creates a new empty pool
 func NewEmptyPool() *pool {
 	return &pool{}
 }
+
 func (p *pool) isObjectTypeConfiged() bool {
 	if p.objectType == "" || p.objectCreator == nil {
 		return false
@@ -24,6 +29,7 @@ func (p *pool) isObjectTypeConfiged() bool {
 	return true
 }
 
+//Config the type of object created from the pool
 func (p *pool) SetObjectType(objectType string) error {
 	if p.isObjectTypeConfiged() {
 		return errors.New("Pool has been configed")
@@ -33,12 +39,13 @@ func (p *pool) SetObjectType(objectType string) error {
 	if !supported {
 		return errors.New("Unsupported object type")
 	}
-	//fmt.Println(reflect.TypeOf(factory).Name())
+
 	p.objectType = strings.ToLower(objectType)
 	p.objectCreator = factory
 	return nil
 }
 
+//Config the maximum and minimum numbers of objects in the pool
 func (p *pool) SetupObjectPool(capacity int, minObject int) error {
 	if capacity < minObject {
 		return errors.New("Mininum object number must be larger than pool's capacity")
@@ -46,10 +53,13 @@ func (p *pool) SetupObjectPool(capacity int, minObject int) error {
 	if !p.isObjectTypeConfiged() {
 		return errors.New("Please config object type")
 	}
+
+	p.timeOut = 5 * time.Second //config the default timeout = 5 seconds
 	p.capacity = capacity
-	p.idleObject = make(chan interface{}, capacity)
+	p.minimumObject = minObject
+	p.idleObject = make(chan abstractObjectInterface, capacity)
 	for i := 0; i < minObject; i++ {
-		newObject, err := p.objectCreator.CreateObject()
+		newObject, err := p.objectCreator.createObject()
 		if err != nil {
 			return err
 		}
@@ -58,7 +68,23 @@ func (p *pool) SetupObjectPool(capacity int, minObject int) error {
 	return nil
 }
 
-func (p *pool) GetObjectFromPool() (interface{}, error) {
+//Config the live-time for every object created from the pool
+func (p *pool) SetObjectTimeOut(long time.Duration) {
+	p.timeOut = long
+}
+
+//Get the number of running objects in the pool
+func (p *pool) GetRunningObjectNumber() int {
+	return p.runningObject
+}
+
+//Get the number of idle objects in the pool
+func (p *pool) GetIdleObjectNumber() int {
+	return len(p.idleObject)
+}
+
+//Release an object from its pool
+func (p *pool) GetObjectFromPool() (abstractObjectInterface, error) {
 	if !p.isObjectTypeConfiged() {
 		return nil, errors.New("Please config object type")
 	}
@@ -70,7 +96,7 @@ func (p *pool) GetObjectFromPool() (interface{}, error) {
 	}
 
 	if p.runningObject < p.capacity {
-		object, err := p.objectCreator.CreateObject()
+		object, err := p.objectCreator.createObject()
 		if err != nil {
 			return nil, err
 		}
@@ -80,7 +106,8 @@ func (p *pool) GetObjectFromPool() (interface{}, error) {
 	return nil, errors.New("Pool is full")
 }
 
-func (p *pool) ReturnObjectToPool(object interface{}) error {
+//Return an object to its pool
+func (p *pool) ReturnObjectToPool(object abstractObjectInterface) error {
 	objectType := strings.ToLower(reflect.TypeOf(object).Name())
 	_, supported := supportedObject[objectType]
 	if !supported {
@@ -93,7 +120,29 @@ func (p *pool) ReturnObjectToPool(object interface{}) error {
 
 }
 
-var supportedObject = map[string]ObjectFactory{
+//Remove timeout objects and create the new ones to achive the minimum number
+func (p *pool) RefreshPool() error {
+	//remove out-of-time objects
+	for i := 0; i < len(p.idleObject); i++ {
+		object := <-p.idleObject
+		if object.getAliveTime() < p.timeOut {
+			p.idleObject <- object
+		}
+	}
+
+	//create new objects to achive the minimum number
+	totalObject := len(p.idleObject) + p.runningObject
+	for ; totalObject < p.minimumObject; totalObject++ {
+		newObject, err := p.objectCreator.createObject()
+		if err != nil {
+			return err
+		}
+		p.idleObject <- newObject
+	}
+	return nil
+}
+
+var supportedObject = map[string]objectFactory{
 	"connection": &connectionFactory{},
 	"pencil":     &pencilFactory{},
 }
