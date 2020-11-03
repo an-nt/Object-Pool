@@ -3,6 +3,7 @@ package pool
 import (
 	"errors"
 	"reflect"
+	"strings"
 )
 
 type pool struct {
@@ -23,39 +24,38 @@ func (p *pool) isObjectTypeConfiged() bool {
 	return true
 }
 
-func (p *pool) SetObjectType(objectType string) (*pool, error) {
+func (p *pool) SetObjectType(objectType string) error {
 	if p.isObjectTypeConfiged() {
-		return p, errors.New("Pool has been configed")
+		return errors.New("Pool has been configed")
 	}
 
-	factory, supported := supportedObject[objectType]
+	factory, supported := supportedObject[strings.ToLower(objectType)]
 	if !supported {
-		return p, errors.New("Unsupported object type")
+		return errors.New("Unsupported object type")
 	}
-
-	p.objectType = objectType
+	//fmt.Println(reflect.TypeOf(factory).Name())
+	p.objectType = strings.ToLower(objectType)
 	p.objectCreator = factory
-	return p, nil
+	return nil
 }
 
-func (p *pool) SetupObjectPool(capacity int, minObject int) (*pool, error) {
+func (p *pool) SetupObjectPool(capacity int, minObject int) error {
 	if capacity < minObject {
-		return p, errors.New("Mininum object number must be larger than pool's capacity")
+		return errors.New("Mininum object number must be larger than pool's capacity")
 	}
 	if !p.isObjectTypeConfiged() {
-		return p, errors.New("Please config object type")
+		return errors.New("Please config object type")
 	}
-
+	p.capacity = capacity
 	p.idleObject = make(chan interface{}, capacity)
 	for i := 0; i < minObject; i++ {
 		newObject, err := p.objectCreator.CreateObject()
 		if err != nil {
-			return p, err
+			return err
 		}
 		p.idleObject <- newObject
-		p.runningObject++
 	}
-	return p, nil
+	return nil
 }
 
 func (p *pool) GetObjectFromPool() (interface{}, error) {
@@ -81,9 +81,8 @@ func (p *pool) GetObjectFromPool() (interface{}, error) {
 }
 
 func (p *pool) ReturnObjectToPool(object interface{}) error {
-	reflecter := reflect.TypeOf(object)
-	objectName := reflecter.Name()
-	_, supported := supportedObject[objectName]
+	objectType := strings.ToLower(reflect.TypeOf(object).Name())
+	_, supported := supportedObject[objectType]
 	if !supported {
 		return errors.New("Unknown object")
 	}

@@ -1,6 +1,9 @@
 package pool
 
-import "net"
+import (
+	"fmt"
+	"net"
+)
 
 type ObjectFactory interface {
 	CreateObject() (interface{}, error)
@@ -14,15 +17,12 @@ func (c *connectionFactory) CreateObject() (interface{}, error) {
 		return nil, err
 	}
 
-	result := &Connection{
-		Connector: con,
-	}
-	return result, nil
-
+	fmt.Println("Create a new connection")
+	return Connection{Connector: con}, nil
 }
 
 type pencilFactory struct{}
 
 func (p *pencilFactory) CreateObject() (interface{}, error) {
-	return &Pencil{}, nil
+	return Pencil{}, nil
 }
